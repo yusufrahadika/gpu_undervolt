@@ -51,7 +51,7 @@
 
 types=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | sed -e 's/ /_/g')
 
-undervolt_all_gpu(){
+undervolt_all_gpu() {
     i=0
 
     for type in $types; do
@@ -61,7 +61,7 @@ undervolt_all_gpu(){
             adjust_gpu $i 1683 100
         elif [ "$type" = "NVIDIA_GeForce_GTX_1650_with_Max-Q_Design" ]; then
             # discussion see https://github.com/xor2k/gpu_undervolt/issues/3
-            adjust_gpu $i 1595 220            
+            adjust_gpu $i 1595 220
         elif [ "$type" = "NVIDIA_GeForce_RTX_2060_SUPER" ]; then
             adjust_gpu $i 1650 150 325
         elif [ "$type" = "NVIDIA_GeForce_RTX_2070_SUPER" ]; then
@@ -72,7 +72,7 @@ undervolt_all_gpu(){
             echo unknown type: $type
             exit 1
         fi
-        i=$((i+1))
+        i=$((i + 1))
     done
 
     exit 0
@@ -101,17 +101,17 @@ modify_xwrapper() {
     echo created ${xwrapper_file}.orig as backup of ${xwrapper_file}
 
     sed -i 's/allowed_users=console/#allowed_users=console/g' $xwrapper_file
-    echo 'allowed_users=anybody' >> $xwrapper_file
-    echo 'needs_root_rights=yes' >> $xwrapper_file
+    echo 'allowed_users=anybody' >>$xwrapper_file
+    echo 'needs_root_rights=yes' >>$xwrapper_file
     echo "modified $xwrapper_file, may weaken xorg security"
-    
+
     some_modifications_happened=True
 }
 
 check_xwrapper() {
-    if grep -q ^allowed_users=console $xwrapper_file || \
-    ! grep -q 'allowed_users=anybody' $xwrapper_file || \
-    ! grep -q 'needs_root_rights=yes' $xwrapper_file; then
+    if grep -q ^allowed_users=console $xwrapper_file ||
+        ! grep -q 'allowed_users=anybody' $xwrapper_file ||
+        ! grep -q 'needs_root_rights=yes' $xwrapper_file; then
         $1
     fi
 }
@@ -122,7 +122,7 @@ if [ $# -eq 1 ] && [ $1 = 'init' ]; then
     check_xwrapper modify_xwrapper
 
     if ! [ -e $xorg_conf_file ]; then
-cat > $xorg_conf_file << EOF
+        cat >$xorg_conf_file <<EOF
 Section "OutputClass"
     Identifier "nvidia"
     MatchDriver "nvidia-drm"
@@ -171,16 +171,15 @@ if [ $# -eq 1 ] && [ $1 = 'disable' ]; then
     nvidia-smi -pm 0
     nvidia-smi -rgc
     run_nvidia_settings \
-     -a GPUGraphicsClockOffsetAllPerformanceLevels=0
+        -a GPUGraphicsClockOffsetAllPerformanceLevels=0
     run_nvidia_settings \
-     -a GPUMemoryTransferRateOffsetAllPerformanceLevels=0
+        -a GPUMemoryTransferRateOffsetAllPerformanceLevels=0
 
     exit 0
 fi
 
-
 adjust_gpu() {
-    
+
     gpu=$1
     gpu_high=$2 # e.g. 1770 (RTX 2070 Super)
     clock_offset=$3
@@ -190,10 +189,10 @@ adjust_gpu() {
     nvidia-smi -i $gpu -lgc 0,$gpu_high
 
     run_nvidia_settings \
-     -a [gpu:$gpu]/GPUGraphicsClockOffsetAllPerformanceLevels=$clock_offset
+        -a [gpu:$gpu]/GPUGraphicsClockOffsetAllPerformanceLevels=$clock_offset
 
     run_nvidia_settings \
-     -a [gpu:$gpu]/GPUMemoryTransferRateOffsetAllPerformanceLevels=$memory_offset
+        -a [gpu:$gpu]/GPUMemoryTransferRateOffsetAllPerformanceLevels=$memory_offset
 
 }
 
