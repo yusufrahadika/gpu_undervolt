@@ -14,10 +14,19 @@ Requirements:
 Currently supported cards: see undervolt_all_gpu below. If your card is not
 listed, just look up the clocks at Wikipedia and add them to the list. In
 
-    adjust_gpu $i 1695 200
+    adjust_gpu $i 1695 200 500
 
-the third argument (here 200) means a clock offset of 200 Mhz. The larger,
+The third argument (here 200) means a clock offset of 200 MHz. The larger,
 the more intense the undervolting. Too much undervolting destabilizes the
 system and can make it crash. Therefore, this value can be tuned and an
 actual setting can be verfied with a benchmark, e.g. some deep learning
 training or your favorite GPU intense game.
+
+The fourth argument (here 500) means a memory offset of 500 MHz.
+This is usually useful for memory-intensive processes such as LLM inference.
+This setting can compensate for performance loss due to the undervolting process,
+allowing you to achieve power usage savings with minimal overall performance loss.
+However, tuning this setting can be tricky since the same GPU chip can be equipped
+with memory from different brands, especially if you have some GPUs with different brands.
+This also means it will be a bit difficult to generalize this setting.
+For stability, I usually choose the lowest memory offset value among the cards.
