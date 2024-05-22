@@ -62,6 +62,8 @@ undervolt_all_gpu(){
         elif [ "$type" = "NVIDIA_GeForce_GTX_1650_with_Max-Q_Design" ]; then
             # discussion see https://github.com/xor2k/gpu_undervolt/issues/3
             adjust_gpu $i 1595 220            
+        elif [ "$type" = "NVIDIA_GeForce_RTX_2060_SUPER" ]; then
+            adjust_gpu $i 1650 150
         elif [ "$type" = "NVIDIA_GeForce_RTX_2070_SUPER" ]; then
             adjust_gpu $i 1770 100
         elif [ "$type" = "NVIDIA_GeForce_RTX_3090" ]; then
@@ -152,7 +154,7 @@ count() {
     echo $#
 }
 
-xauthority_to_use=$(ps aux | grep -o /run/user/\[0-9\]*/gdm/Xauthority)
+xauthority_to_use="/var/run/lightdm/root/:0"
 
 if [ $(count $xauthority_to_use) -lt 1 ]; then
     echo "error: gdm not running"

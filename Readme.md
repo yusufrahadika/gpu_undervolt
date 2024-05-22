@@ -7,7 +7,7 @@ For Windows, there are special tools like MSI Afterburner to undervolt. For
 Linux however, the situation is trickier. This script might help.
 
 Requirements:
-1. Ubuntu Desktop Linux 22.04 (Ubuntu Server won't work)
+1. Linux with Xorg and LightDM installed (I'm not sure though, tested on a Proxmox 8.2 Host)
 2. nvidia-driver-515 (other versions might work, too)
 3. heterogenous multi GPU systems (single GPU works too of course)
 
