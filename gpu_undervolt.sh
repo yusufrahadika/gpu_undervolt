@@ -68,6 +68,8 @@ undervolt_all_gpu() {
             adjust_gpu $i 1770 100
         elif [ "$type" = "NVIDIA_GeForce_RTX_3090" ]; then
             adjust_gpu $i 1695 200
+        elif [ "$type" = "NVIDIA_GeForce_RTX_4060_Ti" ]; then
+            adjust_gpu $i 2535 180 1000
         else
             echo unknown type: $type
             exit 1
