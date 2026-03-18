@@ -49,7 +49,146 @@
 #
 ################################################################################
 
+if [ $(id -u) -ne 0 ]; then
+    echo "Please run as root"
+    exit 1
+fi
+
+if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "error: nvidia-smi not found"
+    exit 1
+fi
+
 types=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | sed -e 's/ /_/g')
+nvidia_tuner_bin=${NVIDIA_TUNER_BIN:-nvidia-tuner}
+nvidia_tuner_warned=false
+nvidia_tuner_version=0.5.0
+nvidia_tuner_url="https://github.com/WickedLukas/nvidia-tuner/releases/download/${nvidia_tuner_version}/nvidia-tuner"
+nvidia_tuner_sha256=cd8921adf65300f76a3099f21f6522411e89e5df0767cc754fe2c2ba07ee1bec
+nvidia_tuner_install_path=/usr/local/sbin/nvidia-tuner
+
+warn_missing_nvidia_tuner() {
+    if [ "$nvidia_tuner_warned" = false ]; then
+        echo "warning: ${nvidia_tuner_bin} not found, applying nvidia-smi settings only" >&2
+        echo "warning: install nvidia-tuner or set NVIDIA_TUNER_BIN to enable clock offsets" >&2
+        nvidia_tuner_warned=true
+    fi
+}
+
+have_nvidia_tuner() {
+    command -v "$nvidia_tuner_bin" >/dev/null 2>&1
+}
+
+run_nvidia_tuner() {
+    "$nvidia_tuner_bin" "$@"
+}
+
+download_file() {
+    url=$1
+    output=$2
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fL "$url" -o "$output"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -O "$output" "$url"
+    else
+        echo "error: neither curl nor wget is installed"
+        return 1
+    fi
+}
+
+check_sha256() {
+    file=$1
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual_sha256=$(sha256sum "$file" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual_sha256=$(shasum -a 256 "$file" | awk '{print $1}')
+    else
+        echo "error: neither sha256sum nor shasum is installed"
+        return 1
+    fi
+
+    if [ "$actual_sha256" != "$nvidia_tuner_sha256" ]; then
+        echo "error: checksum mismatch for downloaded nvidia-tuner"
+        echo "expected: $nvidia_tuner_sha256"
+        echo "actual:   $actual_sha256"
+        return 1
+    fi
+}
+
+install_nvidia_tuner() {
+    if have_nvidia_tuner; then
+        echo "nvidia-tuner already available at $(command -v "$nvidia_tuner_bin")"
+        return 0
+    fi
+
+    tmp_file=$(mktemp /tmp/nvidia-tuner.XXXXXX) || exit 1
+    trap 'rm -f "$tmp_file"' EXIT INT TERM
+
+    echo "downloading nvidia-tuner ${nvidia_tuner_version}..."
+    download_file "$nvidia_tuner_url" "$tmp_file" || exit 1
+
+    echo "verifying checksum..."
+    check_sha256 "$tmp_file" || exit 1
+
+    install -m 0755 "$tmp_file" "$nvidia_tuner_install_path" || exit 1
+    rm -f "$tmp_file"
+    trap - EXIT INT TERM
+
+    echo "installed nvidia-tuner to $nvidia_tuner_install_path"
+}
+
+reset_gpu_offsets() {
+    gpu=$1
+
+    if have_nvidia_tuner; then
+        run_nvidia_tuner --index "$gpu" --core-clock-offset 0 --memory-clock-offset 0
+    else
+        warn_missing_nvidia_tuner
+    fi
+}
+
+if [ $# -eq 1 ] && [ $1 = 'disable' ]; then
+    echo disabling...
+    nvidia-smi -pm 0
+    nvidia-smi -rgc
+
+    i=0
+    for type in $types; do
+        reset_gpu_offsets "$i"
+        i=$((i + 1))
+    done
+
+    exit 0
+fi
+
+if [ $# -eq 1 ] && [ $1 = 'init' ]; then
+    install_nvidia_tuner
+    exit 0
+fi
+
+adjust_gpu() {
+
+    gpu=$1
+    gpu_high=$2 # e.g. 1770 (RTX 2070 Super)
+    clock_offset=$3
+    memory_offset=${4:-"0"}
+
+    nvidia-smi -i $gpu -pm 1
+    nvidia-smi -i $gpu -lgc 0,$gpu_high
+
+    if [ "$clock_offset" -ne 0 ] || [ "$memory_offset" -ne 0 ]; then
+        if have_nvidia_tuner; then
+            run_nvidia_tuner \
+                --index "$gpu" \
+                --core-clock-offset "$clock_offset" \
+                --memory-clock-offset "$memory_offset"
+        else
+            warn_missing_nvidia_tuner
+        fi
+    fi
+}
 
 undervolt_all_gpu() {
     i=0
@@ -78,123 +217,6 @@ undervolt_all_gpu() {
     done
 
     exit 0
-}
-
-if [ $(id -u) -ne 0 ]; then
-    echo "Please run as root"
-    exit 1
-fi
-
-init_msg() {
-    echo Please run \"sudo sh $0 init\"
-    echo Some modifications may weaken xorg security
-    exit 1
-}
-
-xwrapper_file=/etc/X11/Xwrapper.config
-
-need_modify_xwrapper_msg() {
-    echo "error: ${xwrapper_file} needs modification"
-    init_msg
-}
-
-modify_xwrapper() {
-    cp -a $xwrapper_file ${xwrapper_file}.orig
-    echo created ${xwrapper_file}.orig as backup of ${xwrapper_file}
-
-    sed -i 's/allowed_users=console/#allowed_users=console/g' $xwrapper_file
-    echo 'allowed_users=anybody' >>$xwrapper_file
-    echo 'needs_root_rights=yes' >>$xwrapper_file
-    echo "modified $xwrapper_file, may weaken xorg security"
-
-    some_modifications_happened=True
-}
-
-check_xwrapper() {
-    if grep -q ^allowed_users=console $xwrapper_file ||
-        ! grep -q 'allowed_users=anybody' $xwrapper_file ||
-        ! grep -q 'needs_root_rights=yes' $xwrapper_file; then
-        $1
-    fi
-}
-
-xorg_conf_file=/etc/X11/xorg.conf.d/10-nvidia.conf
-
-if [ $# -eq 1 ] && [ $1 = 'init' ]; then
-    check_xwrapper modify_xwrapper
-
-    if ! [ -e $xorg_conf_file ]; then
-        cat >$xorg_conf_file <<EOF
-Section "OutputClass"
-    Identifier "nvidia"
-    MatchDriver "nvidia-drm"
-    Driver "nvidia"
-    Option "AllowEmptyInitialConfiguration"
-    Option "Coolbits" "28"
-    ModulePath "/usr/lib/x86_64-linux-gnu/nvidia/xorg"
-EndSection
-EOF
-        echo "created $xorg_conf_file."
-        some_modifications_happened=true
-    fi
-    if [ "$some_modifications_happened" = true ]; then
-        echo "Some modifications happened, please reboot."
-    else
-        echo "Did not do anything, system already initialized"
-    fi
-    exit 0
-fi
-
-check_xwrapper need_modify_xwrapper_msg
-
-if ! [ -e $xorg_conf_file ]; then
-    echo "error: $xorg_conf_file does not exist"
-    init_msg
-fi
-
-count() {
-    echo $#
-}
-
-xauthority_to_use="/var/run/lightdm/root/:0"
-
-if [ $(count $xauthority_to_use) -lt 1 ]; then
-    echo "error: gdm not running"
-    exit 1
-fi
-
-run_nvidia_settings() {
-    DISPLAY=$(cd /tmp/.X11-unix && for x in X*; do echo ":${x#X}"; done) \
-    XAUTHORITY=$xauthority_to_use nvidia-settings $@
-}
-
-if [ $# -eq 1 ] && [ $1 = 'disable' ]; then
-    echo disabling...
-    nvidia-smi -pm 0
-    nvidia-smi -rgc
-    run_nvidia_settings \
-        -a GPUGraphicsClockOffsetAllPerformanceLevels=0
-    run_nvidia_settings \
-        -a GPUMemoryTransferRateOffsetAllPerformanceLevels=0
-
-    exit 0
-fi
-
-adjust_gpu() {
-
-    gpu=$1
-    gpu_high=$2 # e.g. 1770 (RTX 2070 Super)
-    clock_offset=$3
-    memory_offset=${4:-"0"}
-
-    nvidia-smi -i $gpu -pm 1
-    nvidia-smi -i $gpu -lgc 0,$gpu_high
-
-    run_nvidia_settings \
-        -a [gpu:$gpu]/GPUGraphicsClockOffsetAllPerformanceLevels=$clock_offset
-
-    run_nvidia_settings \
-        -a [gpu:$gpu]/GPUMemoryTransferRateOffsetAllPerformanceLevels=$memory_offset
 
 }
 
